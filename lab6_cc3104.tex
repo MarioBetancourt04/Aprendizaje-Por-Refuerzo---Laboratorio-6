@@ -1,0 +1,897 @@
+% =============================================================
+%  CC3104 - Aprendizaje por Refuerzo | Laboratorio 6
+%  Gradiente de politica: REINFORCE con linea base vs Actor-Critic
+%  Plantilla uvglab (version standalone, preambulo inlineado)
+%  Compilar: pdflatex lab6_cc3104.tex  (dos veces, por \pageref{LastPage})
+%
+%  CAMBIOS RESPECTO AL PREAMBULO DEL LAB 4:
+%    1. - colores 'congestion', 'estante', 'rutasegura' (eran del mapa TikZ)
+%    2. - \usepackage{tikz}  (no hay mapa en este lab; si lo necesitas,
+%         descomenta la linea marcada)
+%    3. + \usepackage{subcaption}  (las 4 graficas del Task 2 van en grid)
+%    4. + \graphicspath{{figs/}{./}}  (para las figuras de la entrega final)
+%    5. + \usepackage{amsfonts} y \DeclareMathOperator{\Var}  (varianza,
+%         sesgo y esperanzas aparecen por todo el Task 1.3)
+%    6. + entorno 'prediccion' (caja con marco punteado) para marcar las
+%         predicciones del Task 1 que hay que contrastar en el Task 3.1
+%    7. + \usepackage{csquotes} para el resumen del paper (Task 3.4)
+%  El resto del preambulo es identico al del Lab 4.
+% =============================================================
+\documentclass[11pt,letterpaper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+% babel-spanish: si lo tenes instalado (Overleaf lo tiene), se carga solo.
+\IfFileExists{spanish.ldf}{\usepackage[spanish,es-tabla]{babel}}{}
+\usepackage[margin=2.5cm,top=3cm,bottom=2.8cm]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{lastpage}
+\usepackage{enumitem}
+\usepackage{csquotes}
+\usepackage[hidelinks]{hyperref}
+\usepackage{listings}
+% \usepackage{tikz}   % <- descomentar si agregas diagramas
+
+\tcbuselibrary{skins,breakable}
+
+\graphicspath{{figs/}{./}}
+
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Sesgo}{Sesgo}
+\newcommand{\Esp}{\mathbb{E}}
+
+% ---------- Paleta UVG ----------
+\definecolor{uvgverde}{RGB}{0,104,56}
+\definecolor{uvgverdeclaro}{RGB}{230,243,235}
+\definecolor{uvggris}{RGB}{90,90,90}
+
+% ---------- Encabezado y pie ----------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{uvgverde}{\textbf{CC3104 -- Aprendizaje por Refuerzo}}}
+\fancyhead[R]{\small Christian Echeverría (221441)\\[-2pt]\small Mario Betancourt (23440)}
+\fancyfoot[L]{\small\textcolor{uvggris}{UVG -- Facultad de Ingeniería}}
+\fancyfoot[R]{\small\textcolor{uvggris}{Pág. \thepage\ de \pageref{LastPage}}}
+\renewcommand{\headrulewidth}{0.8pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\setlength{\headheight}{26pt}
+
+% ---------- Titulos de seccion ----------
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries\color{uvgverde}}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries\color{uvgverde}}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.4em}{0.8em}
+\titlespacing*{\subsection}{0pt}{1.1em}{0.6em}
+
+% ---------- Cajas ----------
+\newtcolorbox{enunciado}{
+  breakable, enhanced,
+  colback=white, colframe=uvgverde, boxrule=0.9pt,
+  arc=2pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  title=\textbf{Enunciado}, fonttitle=\small,
+  coltitle=white, colbacktitle=uvgverde
+}
+
+\newtcolorbox{respuesta}{
+  breakable, enhanced,
+  colback=uvgverdeclaro, colframe=uvgverde, boxrule=0.9pt,
+  arc=2pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  title=\textbf{Respuesta}, fonttitle=\small,
+  coltitle=white, colbacktitle=uvgverde
+}
+
+\newtcolorbox{observacion}{
+  breakable, enhanced,
+  colback=white, colframe=uvggris, boxrule=0.6pt,
+  arc=2pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  title=\textbf{Observación}, fonttitle=\small,
+  coltitle=white, colbacktitle=uvggris
+}
+
+% Caja para las predicciones del Task 1 que se contrastan en el Task 3.1
+\newtcolorbox{prediccion}{
+  breakable, enhanced,
+  colback=white, colframe=uvgverde, boxrule=0.9pt,
+  frame style={dash pattern=on 4pt off 3pt},
+  arc=2pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  title=\textbf{Predicción (se contrasta en Task 3.1)}, fonttitle=\small,
+  coltitle=white, colbacktitle=uvgverde
+}
+
+\newtcolorbox{pendiente}{
+  breakable, enhanced,
+  colback=white, colframe=uvggris, boxrule=0.6pt,
+  frame style={dash pattern=on 4pt off 3pt},
+  arc=2pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  title=\textbf{Pendiente}, fonttitle=\small,
+  coltitle=white, colbacktitle=uvggris
+}
+
+\newcommand{\lead}[1]{\textbf{#1}}
+
+% ---------- Estilo de codigo ----------
+\definecolor{codegris}{RGB}{245,245,245}
+\lstdefinestyle{uvgpython}{
+  language=Python,
+  backgroundcolor=\color{codegris},
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{uvgverde}\bfseries,
+  commentstyle=\color{uvggris}\itshape,
+  stringstyle=\color{teal},
+  numbers=left, numbersep=8pt, numberstyle=\tiny\color{uvggris},
+  frame=leftline, framerule=2pt, rulecolor=\color{uvgverde},
+  showstringspaces=false, breaklines=true, tabsize=4, xleftmargin=12pt
+}
+\lstset{style=uvgpython}
+
+% =============================================================
+\begin{document}
+
+% ---------- Bloque de titulo compacto ----------
+\begin{center}
+  {\Large\bfseries\color{uvgverde} Laboratorio 6}\\[4pt]
+  {\large REINFORCE con línea base vs.\ Actor-Critic en control continuo}\\[6pt]
+  {\small Universidad del Valle de Guatemala --- Facultad de Ingeniería}\\[2pt]
+  {\small CC3104 -- Aprendizaje por Refuerzo}\\[6pt]
+  {\small Christian Echeverría (221441) \quad\textbullet\quad Mario Betancourt (23440)}\\[2pt]
+  {\small \today}
+\end{center}
+\vspace{0.6em}
+\hrule
+\vspace{1.2em}
+
+\begin{observacion}
+\lead{Contexto del caso.} Una empresa de robótica de asistencia médica desarrolla un
+exoesqueleto para rehabilitación de movilidad en pacientes con lesión de rodilla. El
+controlador debe asistir el movimiento de la pierna de forma suave y eficiente,
+minimizando el esfuerzo del motor. Antes de pasar a hardware, se valida si los métodos
+de gradiente de política son apropiados para este dominio de control continuo, usando
+\texttt{LunarLanderContinuous-v2} como proxy del problema real.
+\end{observacion}
+
+% =============================================================
+\section{Task 1}
+% =============================================================
+
+\begin{enunciado}
+Respondan las siguientes preguntas con argumentación técnica rigurosa antes de
+implementar nada.
+\end{enunciado}
+
+\subsection{Inadecuación de Q-Learning tabular y DQN}
+
+\begin{enunciado}
+El entorno de simulación es \texttt{LunarLanderContinuous-v2} de Gymnasium, con espacio
+de acción continuo de dos dimensiones que representa la fuerza de dos propulsores.
+Argumenten formalmente por qué Q-Learning tabular y DQN son inapropiados para este
+entorno. El argumento debe mencionar explícitamente el \textbf{espacio de acción}, el
+\textbf{operador \textit{argmax}} y la \textbf{representación de la política}.
+\end{enunciado}
+
+\begin{respuesta}
+\lead{Espacio de acción.} En \texttt{LunarLanderContinuous-v2} el espacio de acción es
+$\mathcal{A} = [-1,1]^2 \subset \mathbb{R}^2$, donde $a^{(1)}$ regula el propulsor
+principal y $a^{(2)}$ los laterales. Es un conjunto \emph{no numerable}: tiene la
+cardinalidad del continuo. El espacio de estados $\mathcal{S} \subset \mathbb{R}^8$
+también lo es.
+
+\medskip
+\lead{Por qué falla Q-Learning tabular.} El método mantiene una tabla indexada por pares
+$(s,a)$ y aplica
+\[
+  Q(S_t,A_t) \leftarrow Q(S_t,A_t) + \alpha\Big[R_{t+1} + \gamma \max_{a}Q(S_{t+1},a) - Q(S_t,A_t)\Big].
+\]
+Con $\mathcal{S}\times\mathcal{A}$ no numerable la tabla no es representable en memoria
+finita. Pero el problema de fondo no es el almacenamiento: es que la tabla \emph{no
+generaliza}. Cada entrada se actualiza de forma independiente, y la probabilidad de
+volver a visitar exactamente el mismo par $(s,a)$ es cero (es un conjunto de medida nula
+bajo cualquier política con densidad). Cada entrada recibiría a lo sumo una
+actualización, de modo que el estimador nunca acumula estadística y el promedio muestral
+que justifica la convergencia de Q-Learning jamás se forma. Ni con memoria infinita
+aprendería.
+
+\medskip
+\lead{Por qué falla DQN.} DQN resuelve el lado del \emph{estado}: sustituye la tabla por
+$Q_w(s,\cdot)$, una red que generaliza entre estados parecidos. No resuelve el lado de la
+\emph{acción}, por dos razones distintas.
+
+\emph{(i) Arquitectura.} La red de DQN emite un vector de $|\mathcal{A}|$ salidas, una
+por acción, precisamente para poder tomar el máximo con un solo paso hacia adelante. Esa
+arquitectura presupone $\mathcal{A}$ finito y discreto; con $\mathcal{A}$ continuo el
+número de cabezas de salida no está definido.
+
+\emph{(ii) El operador \textit{argmax}.} Es el obstáculo esencial, y aparece en dos
+lugares:
+\[
+  \pi(s) \;=\; \arg\max_{a \in \mathcal{A}} Q(s,a),
+  \qquad
+  y_t \;=\; R_{t+1} + \gamma \max_{a' \in \mathcal{A}} Q_{w^-}(S_{t+1}, a').
+\]
+Con $\mathcal{A}$ discreto ambos se resuelven enumerando. Con $\mathcal{A}$ continuo cada
+uno es un problema de optimización global sobre $[-1,1]^2$, y $Q_w$ es una red neuronal:
+no es cóncava en $a$, no tiene solución en forma cerrada, y admite múltiples óptimos
+locales. Además el máximo no se necesita una vez, sino en \emph{cada} transición y para
+\emph{cada} muestra del minilote objetivo. Con minilotes de 64 y $10^6$ pasos de
+entrenamiento, eso son del orden de $6\times 10^7$ optimizaciones no convexas anidadas
+dentro del bucle de aprendizaje. El costo es prohibitivo y, peor aún, cualquier error del
+maximizador interno se propaga como sesgo sistemático al objetivo de \textit{bootstrapping}.
+
+\medskip
+\lead{Representación de la política.} Esta es la diferencia estructural. En Q-Learning y
+DQN la política es \emph{implícita y derivada}: no existe como objeto propio, sino que se
+extrae de $Q$ mediante la maximización anterior. De ahí se siguen dos limitaciones. Es
+\emph{determinista por construcción} —la única estocasticidad disponible es
+$\varepsilon$-greedy, que inyecta ruido uniforme y arbitrario, no una exploración
+modulada por el estado— y su evaluación cuesta una optimización completa. Los métodos de
+gradiente de política representan $\pi_\theta(a\mid s)$ de forma \emph{explícita y
+paramétrica}: la red emite directamente los parámetros de una distribución sobre
+$\mathcal{A}$, muestrear una acción cuesta $O(1)$, la exploración es intrínseca y su
+magnitud ($\sigma$) es aprendible, y el óptimo se busca por ascenso de gradiente en
+$\theta$ en lugar de por maximización sobre $a$. La maximización sobre el espacio de
+acción desaparece del algoritmo.
+
+\medskip
+\lead{Por qué la discretización no lo salva.} La objeción obvia es discretizar
+$\mathcal{A}$ en $k$ niveles por dimensión. Con $d=2$ y $k=11$ dan 121 acciones, que
+parece manejable. Falla por cuatro motivos:
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+  \item \emph{Crecimiento exponencial.} El número de acciones es $k^d$. El problema real
+        —un exoesqueleto con varias articulaciones actuadas— tiene $d$ del orden de 6 o
+        7; con $k=11$ eso son $1.9\times 10^7$ salidas. El proxy es engañosamente barato.
+  \item \emph{Pérdida de resolución.} El error de cuantización está acotado por
+        $\tfrac{2}{k-1}$ por dimensión, y el aterrizaje suave exige control fino del
+        empuje cerca del contacto. Aumentar $k$ para recuperar precisión es exactamente
+        lo que dispara el punto anterior.
+  \item \emph{Destrucción de la estructura métrica.} $\mathcal{A}$ es un espacio métrico:
+        empujes cercanos producen efectos cercanos. Al discretizar, cada nivel se vuelve
+        una etiqueta simbólica sin relación con sus vecinos, de modo que lo aprendido
+        sobre un nivel de empuje no se transfiere al contiguo. Se descarta información
+        del problema.
+  \item \emph{Conflicto con el requisito de suavidad.} Anticipando la sección 1.4: una
+        política sobre acciones cuantizadas solo puede cambiar el empuje en saltos de
+        tamaño $\tfrac{2}{k-1}$. Para un dispositivo sujeto a la pierna de un paciente,
+        una discretización gruesa \emph{introduce} la brusquedad que hay que evitar.
+\end{enumerate}
+\end{respuesta}
+
+\subsection{Gradiente del logaritmo de la política Gaussiana}
+
+\begin{enunciado}
+Para \texttt{LunarLanderContinuous-v2} la política se parametriza como
+$\pi_\theta(a \mid s) = \mathcal{N}(\mu_\theta(s), \sigma^2 I)$, donde $\mu_\theta(s)$ es
+la salida de una red neuronal. Expliquen cómo se calcula
+$\nabla_\theta \ln \pi_\theta(A_t \mid S_t)$ para esta parametrización específica.
+Desarrollen la expresión analítica del gradiente del logaritmo de la densidad Gaussiana
+respecto a $\theta$, identificando qué parte depende de $\theta$ y qué parte no.
+\end{enunciado}
+
+\begin{respuesta}
+\lead{Densidad y logaritmo.} Para $a \in \mathbb{R}^d$ con covarianza isotrópica
+$\sigma^2 I$:
+\[
+  \ln \pi_\theta(a \mid s) \;=\; -\frac{1}{2\sigma^{2}}\,\lVert a - \mu_\theta(s) \rVert^{2}
+  \;-\; \frac{d}{2}\ln\!\left(2\pi\sigma^{2}\right)
+\]
+
+\medskip
+Conviene separar el término logarítmico para exhibir la dependencia en $\sigma$:
+\[
+  \ln \pi_\theta(a \mid s) \;=\; -\frac{1}{2\sigma^{2}}\,\lVert a - \mu_\theta(s) \rVert^{2}
+  \;-\; d\ln\sigma \;-\; \frac{d}{2}\ln(2\pi), \qquad d = 2.
+\]
+
+\medskip
+\lead{Qué depende de $\theta$ y qué no.} Distinguimos tres bloques:
+
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+  \item $\tfrac{d}{2}\ln(2\pi)$ es una constante de normalización pura: no depende ni de
+        $\theta$ ni de $\sigma$ ni de los datos. Su gradiente es nulo y en la
+        implementación puede omitirse sin alterar nada.
+  \item $\mu_\theta(s)$ es lo \emph{único} que depende de los pesos de la red. Toda la
+        dependencia en $\theta$ entra por el término cuadrático.
+  \item $\sigma$ merece atención aparte. En la parametrización clásica $\sigma$ es un
+        hiperparámetro fijo y entonces $-d\ln\sigma$ también es constante. Pero la
+        especificación del Task 2 exige que $\sigma$ sea un \emph{parámetro aprendible}
+        (independiente del estado, inicializado en $0.5$). Bajo esa especificación
+        $\theta = (\theta_\mu, \rho)$ con $\rho = \ln\sigma$ —se parametriza el
+        logaritmo para garantizar $\sigma > 0$ sin restricciones— y el término
+        $-d\ln\sigma = -d\rho$ \emph{sí} contribuye al gradiente. Ambos casos se
+        desarrollan abajo.
+\end{enumerate}
+
+\medskip
+\lead{Gradiente respecto a los pesos de la red.} Sea
+$J(s) = \partial \mu_\theta(s)/\partial\theta_\mu \in \mathbb{R}^{d\times|\theta_\mu|}$ el
+jacobiano que entrega la retropropagación. Derivando el término cuadrático por regla de
+la cadena:
+\[
+  \nabla_{\theta_\mu} \ln \pi_\theta(a \mid s)
+  \;=\; \frac{1}{\sigma^{2}}\, J(s)^{\!\top}\big(a - \mu_\theta(s)\big).
+\]
+
+\medskip
+\lead{Gradiente respecto a la desviación estándar.} Con $\sigma = e^{\rho}$:
+\[
+  \frac{\partial}{\partial \rho}\ln \pi_\theta(a\mid s)
+  \;=\; \frac{\lVert a - \mu_\theta(s)\rVert^{2}}{\sigma^{2}} \;-\; d.
+\]
+
+\medskip
+\lead{Interpretación.} El factor $(a-\mu_\theta(s))/\sigma^2$ es el residuo entre la
+acción efectivamente muestreada y la media propuesta, escalado por la precisión. Es la
+dirección en el espacio de acciones que \emph{aumenta} la verosimilitud de $A_t$; en el
+estimador completo $\hat{A}_t \nabla_\theta \ln\pi_\theta$ es la ventaja la que decide el
+signo: si $\hat{A}_t > 0$ la media se desplaza hacia la acción tomada, si $\hat{A}_t < 0$
+se aleja de ella. El gradiente respecto a $\rho$ tiene esperanza nula en el $\sigma$
+correcto, ya que $\Esp\lVert a-\mu\rVert^2 = d\sigma^2$: aumenta la dispersión cuando las
+acciones muestreadas caen sistemáticamente más lejos de lo que $\sigma$ predice y la
+reduce en caso contrario. Ese es el mecanismo por el cual la entropía cae durante el
+entrenamiento, y es exactamente lo que se mide en el Task 3.3.
+
+\medskip
+\lead{Tres consecuencias que importan para la implementación.}
+
+\emph{(a) La ventaja es constante respecto a $\theta$.} En
+$\nabla_\theta J(\theta) = \Esp[\hat{A}_t\,\nabla_\theta \ln\pi_\theta(A_t\mid S_t)]$, tanto
+$A_t$ (ya muestreada) como $\hat{A}_t$ se tratan como constantes al derivar. Si el grafo
+de cómputo deja que el gradiente fluya hacia el crítico a través de $\hat{A}_t$, el
+estimador deja de ser el gradiente de política. En PyTorch esto obliga a un
+\texttt{.detach()} sobre la ventaja.
+
+\emph{(b) El factor $1/\sigma^2$ es una fuente de inestabilidad.} La magnitud del
+gradiente crece como $\sigma^{-2}$. Si la política colapsa hacia el determinismo, la
+norma $\lVert\nabla_\theta L\rVert$ se dispara. Es una predicción directa sobre lo que
+debería observarse en el Task 3.2.
+
+\emph{(c) La activación $\tanh$ introduce saturación y desajuste de soporte.} Con
+$\mu_\theta(s) = \tanh(f_\theta(s))$, el jacobiano lleva el factor
+$1-\tanh^2(f_\theta(s))$, que se anula cuando la preactivación se satura: una media
+empujada hacia los extremos del rango deja de recibir gradiente. Además la Gaussiana
+tiene soporte en todo $\mathbb{R}^d$ aunque su media esté acotada, de modo que con
+$\sigma = 0.5$ una fracción no despreciable de las acciones muestreadas cae fuera de
+$[-1,1]$ y el entorno las recorta. La acción ejecutada deja entonces de coincidir con la
+acción cuya densidad se usó en el estimador, lo que introduce un sesgo que la formulación
+teórica no contempla.
+\end{respuesta}
+
+\subsection{Sesgo y varianza: REINFORCE con línea base vs.\ Actor-Critic}
+
+\begin{enunciado}
+Comparen formalmente REINFORCE con línea base y Actor-Critic en términos de sesgo y
+varianza del estimador del gradiente. Para cada algoritmo identifiquen: qué usa como
+estimador de la ventaja $\hat{A}_t$, qué componente introduce sesgo y qué componente
+introduce varianza. Predigan cuál algoritmo esperan que converja más rápido en
+\texttt{LunarLanderContinuous-v2} y justifiquen esa predicción.
+\end{enunciado}
+
+\begin{respuesta}
+\lead{Estimador de la ventaja en cada algoritmo.}
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Algoritmo} & $\hat{A}_t$ & \textbf{Bootstrapping} \\
+\midrule
+REINFORCE con línea base & $G_t - \hat{V}_w(S_t)$ & No \\
+Actor-Critic (TD(0))     & $R_{t+1} + \gamma \hat{V}_w(S_{t+1}) - \hat{V}_w(S_t)$ & Sí \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\lead{REINFORCE con línea base: por qué es insesgado.} La línea base no introduce sesgo
+\emph{cualquiera que sea} su calidad, siempre que no dependa de la acción. Para todo
+$b(S_t)$:
+\begin{align*}
+  \Esp_{a\sim\pi_\theta}\!\big[b(S_t)\,\nabla_\theta \ln\pi_\theta(a\mid S_t)\big]
+  &= b(S_t)\int_{\mathcal{A}}\pi_\theta(a\mid S_t)\,
+     \frac{\nabla_\theta \pi_\theta(a\mid S_t)}{\pi_\theta(a\mid S_t)}\,da \\[2pt]
+  &= b(S_t)\,\nabla_\theta \int_{\mathcal{A}}\pi_\theta(a\mid S_t)\,da
+   \;=\; b(S_t)\,\nabla_\theta 1 \;=\; 0.
+\end{align*}
+El punto es fuerte y conviene subrayarlo: si la red de línea base está mal entrenada, el
+estimador pierde eficacia reductora de varianza pero \emph{sigue apuntando en la
+dirección correcta en esperanza}. No puede desviar el aprendizaje.
+
+\medskip
+\lead{REINFORCE con línea base: de dónde viene la varianza.} $G_t = \sum_{k\ge 0}\gamma^k
+R_{t+k+1}$ es una suma Monte Carlo sobre la trayectoria restante completa. Acumula dos
+fuentes de aleatoriedad en cada uno de los pasos que faltan: el muestreo de la Gaussiana
+y la estocasticidad del entorno. A grandes rasgos la varianza crece con el horizonte
+efectivo $\tfrac{1}{1-\gamma}$. En \texttt{LunarLanderContinuous-v2} los episodios llegan
+a 1000 pasos y los retornos van de $\approx -400$ a $\approx +300$ según el episodio
+termine en choque o en aterrizaje: la dispersión del estimador es enorme. A esto se suma
+un problema de eficiencia distinto de la varianza: al requerir el episodio completo, el
+algoritmo produce \emph{una sola actualización por episodio}, es decir alrededor de 1000
+pasos de optimización en toda la corrida.
+
+\medskip
+\lead{Actor-Critic: de dónde viene el sesgo.} El error TD
+$\delta_t = R_{t+1}+\gamma\hat{V}_w(S_{t+1})-\hat{V}_w(S_t)$ satisface
+$\Esp[\delta_t \mid S_t=s, A_t=a] = A^\pi(s,a)$ \emph{únicamente} si
+$\hat{V}_w \equiv V^\pi$. Fuera de ese caso el error de aproximación
+$\epsilon(s) = \hat{V}_w(s)-V^\pi(s)$ entra directamente en la dirección del gradiente:
+al inicio del entrenamiento $\hat{V}_w$ es esencialmente ruido y el actor se actualiza
+hacia un objetivo equivocado. Dos agravantes propios de esta especificación: el crítico
+se entrena sobre datos generados por una política que cambia, de modo que persigue un
+objetivo no estacionario; y el enunciado obliga a que el crítico \emph{comparta el cuerpo
+de la red con el actor}, así que los gradientes del actor modifican las características
+sobre las que el crítico predice y viceversa. Ese acoplamiento hace que la escala relativa
+de ambas pérdidas se vuelva un hiperparámetro crítico.
+
+\medskip
+\lead{Actor-Critic: por qué la varianza es baja.} $\delta_t$ involucra una única
+recompensa y dos evaluaciones de la red de valor. Su varianza es $O(1)$ respecto al
+horizonte, frente al $O\!\big(\tfrac{1}{1-\gamma}\big)$ de $G_t$. Además admite una
+actualización por paso, lo que multiplica por dos o tres órdenes de magnitud el número de
+pasos de optimización a igual presupuesto de episodios.
+
+\medskip
+\lead{Resumen del compromiso.}
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+ & \textbf{Sesgo} & \textbf{Varianza} \\
+\midrule
+REINFORCE con línea base & Nulo & Alta \\
+Actor-Critic             & Positivo & Baja \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{respuesta}
+
+\begin{prediccion}
+\lead{P1 (velocidad de convergencia).} Actor-Critic alcanzará una recompensa media móvil
+de 20 episodios igual o superior a $0$ antes del episodio $600$; REINFORCE con línea base
+no alcanzará ese umbral dentro de los 1000 episodios de la corrida.
+
+\emph{Justificación.} El factor dominante no es el sesgo sino el conteo de
+actualizaciones. Con episodios de varios cientos de pasos, Actor-Critic realiza del orden
+de $10^5$ actualizaciones en 1000 episodios frente a las $10^3$ de REINFORCE. A eso se
+suma que la recompensa de \texttt{LunarLanderContinuous-v2} es densa y con
+\textit{shaping}, condición bajo la cual el \textit{bootstrapping} de TD(0) resulta
+informativo desde temprano y su sesgo se amortiza rápido.
+
+\medskip
+\lead{P2 (norma del gradiente).} La norma media $\lVert\nabla_\theta L\rVert$ de REINFORCE
+será mayor que la de Actor-Critic, y su dispersión entre episodios también, porque
+$|G_t - \hat{V}_w|$ es de orden $10^2$ mientras que $|\delta_t|$ es de orden $10^0$.
+
+\medskip
+\lead{P3 (entropía).} Partiendo de $\sigma_0 = 0.5$ y $d=2$, la entropía inicial es
+$S[\pi_\theta] = \tfrac{d}{2}\ln(2\pi e\sigma^2) \approx 1.45$ nats. Se predice que
+decrece de forma monótona en ambos algoritmos y que cae más rápido en Actor-Critic, por
+el mismo argumento de conteo de actualizaciones de P1.
+
+\medskip
+\lead{Modo de fallo previsto para P1.} Se registra por anticipado la vía por la que P1
+podría refutarse: Actor-Critic con TD(0), tronco compartido y sin término de entropía ni
+normalización de la ventaja es propenso al colapso prematuro de $\sigma$. Si eso ocurre,
+la política se vuelve determinista antes de haber encontrado una región buena, se estanca
+en un óptimo local y REINFORCE —lento pero insesgado— podría terminar por encima. En ese
+escenario P1 quedaría refutada y P3 confirmada de manera que \emph{explicaría} la
+refutación de P1, no que la contradiría.
+\end{prediccion}
+
+\subsection{Restricción de suavidad temporal en el exoesqueleto real}
+
+\begin{enunciado}
+El entorno de exoesqueleto real tiene una restricción que
+\texttt{LunarLanderContinuous-v2} no tiene: las acciones deben ser suaves en el tiempo
+para no causar movimientos bruscos que dañen al paciente. Argumenten cómo modificarían
+la función de recompensa y la parametrización de la política para incorporar esa
+restricción. ¿Cambiaría eso la elección entre REINFORCE y Actor-Critic?
+\end{enunciado}
+
+\begin{respuesta}
+\lead{Modificación de la recompensa.} Penalización sobre la diferencia de acciones
+consecutivas:
+\[
+  R'_t \;=\; R_t \;-\; \lambda \,\lVert a_t - a_{t-1} \rVert^{2}
+\]
+
+con $\lambda > 0$. Si además interesa penalizar la aceleración del comando y no solo su
+velocidad de cambio, puede añadirse un término de tercer orden (\textit{jerk})
+$-\lambda_2\lVert a_t - 2a_{t-1} + a_{t-2}\rVert^2$, al costo de ampliar más el estado.
+
+\medskip
+\lead{Consecuencia sobre la propiedad de Markov.} Este es el punto que la modificación
+obliga a tratar y que suele pasarse por alto. Al depender $R'_t$ de $a_{t-1}$, la
+recompensa deja de ser función de $(s_t,a_t)$ y el proceso deja de ser un MDP sobre
+$\mathcal{S}$. Hay que ampliar el estado:
+\[
+  \tilde{s}_t \;=\; (s_t,\, a_{t-1}) \;\in\; \mathbb{R}^{8+2}.
+\]
+Sin esa ampliación $V^\pi(s)$ estaría promediando sobre una variable no observada y tanto
+la ecuación de Bellman como las garantías de ambos algoritmos dejarían de aplicar. La
+red pasa a recibir 10 entradas.
+
+\medskip
+\lead{Calibración de $\lambda$ y riesgo de \textit{reward hacking}.} La penalización tiene
+un óptimo degenerado: la acción nula constante la anula por completo. Si $\lambda$ domina
+sobre la magnitud típica de $R_t$, la política óptima es no moverse, que es un
+exoesqueleto perfectamente suave y perfectamente inútil. Criterio operativo: fijar
+$\lambda$ de modo que $\lambda\lVert\Delta a\rVert^2$ represente una fracción pequeña
+—del orden del 5 al 10\%— de $|R_t|$ típico, y verificar empíricamente que la política
+resultante sigue completando la tarea antes de aceptar el valor.
+
+\medskip
+\lead{Modificación de la parametrización de la política.} La penalización en la recompensa
+es una restricción \emph{blanda}: el agente puede violarla si le conviene. Para un
+dispositivo sujeto a la pierna de un paciente eso es insuficiente, y conviene trasladar
+parte de la restricción a la parametrización, donde se vuelve estructural.
+
+\emph{(a) Parametrización incremental con límite de tasa.} En lugar de emitir la acción
+absoluta, la red emite un incremento acotado:
+\[
+  a_t = \mathrm{clip}\big(a_{t-1} + \Delta_t,\,-1,\,1\big),
+  \qquad \Delta_t \sim \mathcal{N}\big(\delta_{\max}\tanh(f_\theta(\tilde{s}_t)),\,\sigma^2 I\big).
+\]
+Esto impone una cota dura sobre $\lVert a_t - a_{t-1}\rVert$ por diseño, no por
+incentivo: una garantía de seguridad verificable sin necesidad de confiar en el
+aprendizaje. El costo es que introduce un integrador —los errores se acumulan— y que
+requiere $a_{t-1}$ en el estado, cosa que de todos modos ya exigía la recompensa.
+
+\emph{(b) Tratar $\sigma$ como el problema, no como un detalle.} Es el punto menos obvio y
+probablemente el más importante. Aunque $\mu_\theta$ fuese perfectamente suave, con ruido
+independiente en cada paso las acciones consecutivas difieren en
+$\Esp\lVert a_t - a_{t-1}\rVert^2 = 2d\sigma^2$, es decir un orden de $1.0$ con
+$\sigma=0.5$ sobre un rango de $2$. \emph{La política estocástica es en sí misma la
+principal fuente de brusquedad}, con independencia de lo que aprenda la red. Dos remedios:
+sustituir el ruido independiente por ruido temporalmente correlacionado (proceso de
+Ornstein-Uhlenbeck, como hace DDPG), o desplegar en hardware únicamente la media
+determinista $\mu_\theta(\tilde{s})$ y reservar la estocasticidad para el entrenamiento en
+simulación.
+
+\emph{(c) Filtrado o memoria.} Un filtro pasa-bajos a la salida, o una política recurrente
+que mantenga estado interno, logran suavidad a costa de introducir retardo de fase, lo
+que en un lazo de asistencia física puede degradar la sincronía con el paciente.
+
+\medskip
+\lead{¿Cambia la elección entre REINFORCE y Actor-Critic?} Sí, y refuerza el argumento de
+la sección 1.3 en lugar de matizarlo. La razón es de asignación de crédito. El término
+$-\lambda\lVert a_t - a_{t-1}\rVert^2$ es una señal \emph{densa y estrictamente local}:
+depende solo de dos acciones consecutivas y su responsable es un único paso. TD(0) la
+atribuye exactamente donde ocurre. En cambio el retorno Monte Carlo de REINFORCE reparte
+esa penalización sobre todas las acciones anteriores del episodio, de modo que cientos de
+decisiones suaves reciben crédito negativo por una sacudida que ninguna de ellas causó.
+Eso agrega varianza sin agregar información: la modificación empeora específicamente el
+punto débil de REINFORCE.
+
+\medskip
+\lead{Salvedad.} Dicho eso, la conclusión honesta es más limitada de lo que parece.
+Ninguno de los dos algoritmos es desplegable en hardware: ambos son \textit{on-policy},
+ineficientes en muestras, y sin región de confianza una sola actualización grande puede
+producir una política peligrosa —precisamente el problema que motivó PPO y que se examina
+en el Task 3.2. La pregunta relevante para el sistema real no es cuál de los dos elegir,
+sino cuál sirve mejor como \emph{punto de partida} en simulación antes de escalar a un
+método con control del tamaño de paso. Ese argumento se retoma en el Task 3.5 con la
+evidencia experimental.
+\end{respuesta}
+
+% =============================================================
+\section{Task 2}
+% =============================================================
+
+\subsection{Arquitectura y protocolo experimental}
+
+\begin{respuesta}
+% madagascar
+Ambos algoritmos se implementaron desde cero con PyTorch. El Actor recibe un estado de
+ocho componentes y usa dos capas ocultas de 64 neuronas con ReLU. La cabeza de media
+aplica $\tanh$, y un único parámetro escalar $\log\sigma$, inicializado en
+$\log(0.5)$, se expande a las dos dimensiones; por tanto, la covarianza es
+$\sigma^2I$. Durante entrenamiento se muestrea $a_t\sim\mathcal{N}(\mu_\theta(s_t),
+\sigma^2I)$ y se recorta a $[-1,1]^2$ antes de enviarla al entorno. La entropía
+reportada es la de esta Gaussiana previa al recorte.
+
+REINFORCE usa una red de valor independiente, también $64$--$64$--$1$, ajustada con
+$\operatorname{MSE}(\hat V(S_t),G_t)$. Su pérdida del Actor es
+$-\sum_t\log\pi_\theta(A_t\mid S_t)[G_t-\hat V(S_t)]$, con la ventaja separada del
+grafo. Actor-Critic comparte las capas ocultas y agrega una cabeza escalar de valor. En
+cada transición calcula
+$\delta_t=R_{t+1}+\gamma\hat V(S_{t+1})-\hat V(S_t)$ y minimiza
+$-\log\pi_\theta(A_t\mid S_t)\delta_t+\tfrac12\delta_t^2$. En una truncación por
+tiempo se conserva el \textit{bootstrap}; solo una terminación real lo anula.
+
+Se ejecutaron 1000 episodios por método con semilla 42 y $\gamma=0.99$. Las tasas de
+aprendizaje fueron $10^{-3}$ para el Actor y la línea base de REINFORCE, y
+$3\times10^{-4}$ para la red compartida de Actor-Critic. Gymnasium 1.2.2 retiró el
+identificador \texttt{LunarLanderContinuous-v2}; por ello la ejecución local utilizó su
+sucesor oficial \texttt{LunarLanderContinuous-v3}, conservando el espacio de estados de
+ocho dimensiones y el espacio de acciones continuo $[-1,1]^2$. El notebook intenta
+primero \texttt{v2} para seguir siendo compatible con instalaciones antiguas.
+
+La norma de REINFORCE corresponde a su actualización episódica. En Actor-Critic se
+calcula la norma del gradiente exclusivo de la pérdida del Actor en cada transición y se
+reporta su promedio episódico; se mide antes de sumar la pérdida del Critic para que el
+tronco compartido no contamine la métrica. Esta diferencia de granularidad obliga a
+interpretar las escalas de forma cualitativa y no como una comparación de magnitudes
+idénticamente normalizadas.
+\end{respuesta}
+
+\subsection{Resultados registrados}
+
+\begin{respuesta}
+La tabla resume los arreglos completos guardados en
+\texttt{results/lab6\_metrics.npz}. El cruce indica el primer episodio en que la media
+móvil de 20 recompensas alcanzó cero.
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrr}
+\toprule
+\textbf{Algoritmo} & \textbf{Primeros 100} & \textbf{Últimos 100} & \textbf{Mejor}
+& \textbf{Cruce} & \textbf{$\|\nabla L_A\|$ med.} & \textbf{$\|\nabla L_A\|$ máx.}
+& \textbf{$S_1$} & \textbf{$S_{1000}$} \\
+\midrule
+REINFORCE      & $-259.80$ & $14.73$   & $96.69$ & 778 & $2287.58$ & $30709.21$ & $1.4516$ & $1.4369$ \\
+Actor-Critic   & $-446.09$ & $-147.63$ & $18.31$ & --- & $38.76$   & $515.61$   & $1.4514$ & $1.8816$ \\
+\bottomrule
+\end{tabular}}
+\end{center}
+
+REINFORCE mejoró desde $-259.80$ en los primeros 100 episodios hasta $14.73$ en los
+últimos 100; su media móvil terminó en $14.89$ y alcanzó un máximo de $39.01$ en el
+episodio 991. Actor-Critic también mejoró respecto de su comienzo, pero se estabilizó en
+una solución inferior: su mejor media móvil fue $-125.71$ en el episodio 968 y terminó
+en $-141.91$. Ninguno resolvió el entorno bajo el criterio usual de recompensa 200.
+\end{respuesta}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.96\textwidth]{curvas_aprendizaje.png}
+  \caption{Recompensa total con media móvil de 20 episodios. REINFORCE cruza cero en el
+  episodio 778; Actor-Critic no alcanza el umbral durante la corrida.}
+  \label{fig:curvas}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.96\textwidth]{norma_gradiente.png}
+  \caption{Norma del gradiente del Actor por episodio en escala logarítmica.}
+  \label{fig:gradientes}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.96\textwidth]{entropia.png}
+  \caption{Entropía de la política Gaussiana. La trayectoria no es monótonamente
+  decreciente en ninguno de los algoritmos.}
+  \label{fig:entropia}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.96\textwidth]{episodio_render.png}
+  \caption{Seis cuadros obtenidos mediante \texttt{env.render()} al ejecutar la media
+  determinista de REINFORCE en la semilla 1042. El episodio duró 160 pasos y obtuvo
+  $-101.79$, por lo que la visualización también muestra que el entrenamiento no produjo
+  una política consistentemente resuelta.}
+  \label{fig:render}
+\end{figure}
+
+\clearpage
+
+% =============================================================
+\section{Task 3}
+% =============================================================
+
+\subsection{Contraste de las predicciones del Task 1}
+
+\begin{respuesta}
+\begin{center}
+\begin{tabular}{p{0.09\textwidth}p{0.13\textwidth}p{0.68\textwidth}}
+\toprule
+\textbf{Pred.} & \textbf{Veredicto} & \textbf{Evidencia y explicación} \\
+\midrule
+P1 & \textbf{Refutada} & Actor-Critic no cruzó una media móvil de cero; REINFORCE
+sí lo hizo en el episodio 778 y terminó $162.36$ puntos por encima al comparar los
+promedios de los últimos 100. El mayor número de actualizaciones de TD(0) no compensó
+el sesgo de un Critic impreciso ni la interferencia entre las pérdidas en el cuerpo
+compartido. La caída de Actor-Critic hasta medias cercanas a $-1050$ alrededor del
+episodio 500 muestra que más actualizaciones también amplifican un objetivo sesgado. \\
+\addlinespace
+P2 & \textbf{Confirmada} & La mediana de la norma fue $2287.58$ para REINFORCE y
+$38.76$ para Actor-Critic; sus máximos fueron $30709.21$ y $515.61$. La comparación es
+cualitativa porque una norma agrega todo un episodio y la otra promedia pasos, pero tanto
+la diferencia de escala como la dispersión confirman la dirección predicha. \\
+\addlinespace
+P3 & \textbf{Refutada} & REINFORCE pasó de $1.4516$ a $1.4369$ nats de forma no
+monótona. Actor-Critic descendió inicialmente hasta $1.3388$ en el episodio 206, pero
+después aumentó hasta $1.8816$; no se volvió más determinista ni cayó más rápido de forma
+sostenida. Los errores TD predominantemente negativos favorecieron reducir la
+probabilidad de las muestras tomadas, lo cual puede lograrse aumentando $\sigma$. \\
+\addlinespace
+P4 & \textbf{Inconclusa} & La sección 1.4 anticipó que una penalización local de
+suavidad favorecería Actor-Critic. Esta corrida no agregó
+$-\lambda\lVert a_t-a_{t-1}\rVert^2$ ni modeló la dinámica del exoesqueleto, por lo que
+esa afirmación no puede probarse con LunarLander. \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{respuesta}
+
+\subsection{Norma del gradiente y pasos grandes}
+
+\begin{respuesta}
+Se definió una norma anormalmente alta mediante el criterio de Tukey
+$Q_3+1.5\operatorname{IQR}$. Los umbrales resultaron $8739.39$ para REINFORCE y
+$229.76$ para Actor-Critic, con 72 y 19 episodios atípicos, respectivamente. En
+REINFORCE, el máximo ocurrió en el episodio 33: norma $30709.21$ y recompensa
+$-588.87$. Entre los 64 episodios atípicos posteriores al episodio 20, 56 (87.5\%)
+quedaron por debajo de la recompensa media de los 20 episodios previos. La recompensa
+media en episodios atípicos fue $-321.88$, frente a $-77.89$ en los demás, y la
+correlación de Pearson entre $\log(1+\lVert\nabla L_A\rVert)$ y recompensa fue
+$-0.404$. Hay, por tanto, evidencia de que gradientes grandes coinciden con desempeño
+peor, aunque una correlación observacional no demuestra causalidad.
+
+Actor-Critic tuvo gradientes mucho menores, pero no estuvo libre de saltos: el máximo
+del episodio 518 coincidió con recompensa $-1139.64$. En este método solo 8 de 18
+atípicos evaluables cayeron por debajo de su media previa; además, el promedio por
+episodio puede ocultar picos de una sola transición. El caso observado ilustra el
+problema que motivó PPO: una actualización sin restricción puede cambiar demasiado la
+razón $\pi_{\theta_{new}}(a\mid s)/\pi_{\theta_{old}}(a\mid s)$ y destruir una política
+útil. El objetivo recortado de PPO no elimina gradientes ruidosos, pero impide que las
+muestras sigan incentivando cambios una vez que la razón sale de $[1-\epsilon,
+1+\epsilon]$, reduciendo el efecto de esos pasos.
+\end{respuesta}
+
+\subsection{Entropía de la política}
+
+\begin{respuesta}
+La hipótesis de una disminución gradual no se cumplió. REINFORCE permaneció cerca de su
+valor inicial teórico: alcanzó un máximo de $1.4820$ en el episodio 174, un mínimo de
+$1.4207$ en el 685 y terminó en $1.4369$. Su caída más fuerte en una ventana de 20
+episodios fue de $0.0233$ nats entre los episodios 897 y 917, pero antes y después hubo
+recuperaciones; no existe colapso sostenido de exploración.
+
+Actor-Critic sí cayó rápidamente al inicio: su mayor descenso en 20 episodios fue
+$0.0786$ entre los episodios 13 y 33. Tras el mínimo de $1.3388$ en el episodio 206,
+la tendencia se invirtió y la entropía terminó en su máximo, $1.8816$. Agregar a la
+pérdida un bono $-\beta S[\pi_\theta]$, como en PPO, mantendría exploración y protegería
+contra un colapso prematuro de $\sigma$; sin embargo, en este Actor-Critic aumentaría una
+dispersión que ya es excesiva. Sería necesario ajustar $\beta$, usar decaimiento o una
+entropía objetivo, no asumir que más entropía siempre mejora el control.
+\end{respuesta}
+
+\subsection{Revisión bibliográfica}
+
+\begin{respuesta}
+Se revisó el trabajo de Luo et al., \enquote{Robust walking control of a lower limb
+rehabilitation exoskeleton coupled with a musculoskeletal model via deep reinforcement
+learning}, publicado en \emph{Journal of NeuroEngineering and Rehabilitation} en 2023
+\cite{luo2023}. El problema es controlar un exoesqueleto de rehabilitación de miembro
+inferior con ocho grados de libertad actuados ante interacciones humano--robot inciertas:
+parálisis, debilidad muscular, condición sana y hemiparesia. Los autores entrenan en
+simulación un controlador PPO con política estocástica, una red para la interacción
+humana y una red supervisada de coordinación de 284 unidades musculotendinosas. PPO se
+elige porque el objetivo recortado con $\epsilon=0.2$ limita cambios destructivos de la
+política en un sistema continuo con contactos. Además, aleatorizan masa, inercia,
+fricción, fuerza muscular y retardos para aumentar robustez.
+
+En pruebas virtuales, el error angular RMSE quedó entre $2.048^\circ$ y $5.294^\circ$ en
+las cuatro condiciones; el centro de presión permaneció dentro de la región estable de
+$7\times11$ cm y la mayoría de torques quedó bajo 100 Nm. Una política entrenada solo
+con humano pasivo obtuvo menos de 40\% de éxito con debilidad y 0\% con condición sana o
+hemiparesia, lo que respalda la aleatorización de fuerza. El trabajo aborda directamente
+problemas observados aquí: usa el recorte de PPO para los pasos grandes, una ventaja con
+red de valor para reducir varianza, una recompensa de segunda diferencia de acciones,
+un filtro pasa-bajos y límites de torque para suavidad. Persisten el sesgo del Critic, la
+dependencia de la recompensa y el alto costo muestral (aproximadamente 20 millones de
+muestras). Sobre todo, la validación fue solo simulada: no demuestra seguridad,
+comodidad ni beneficio clínico en pacientes y PPO tampoco ofrece una garantía formal de
+estabilidad.
+
+\medskip
+\lead{Referencia verificable.} DOI:
+\href{https://doi.org/10.1186/s12984-023-01147-2}{10.1186/s12984-023-01147-2}; texto
+completo: \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC10024861/}.
+\end{respuesta}
+
+\subsection{Dictamen para el equipo directivo}
+
+\begin{respuesta}
+\lead{Punto de partida.} Recomendamos la arquitectura Actor-Critic como punto de partida
+de investigación, pero no el Actor-Critic simple entrenado en este laboratorio. La
+evidencia es mixta y debe comunicarse sin ocultarla: REINFORCE logró el mejor desempeño
+($14.73$ frente a $-147.63$ en los últimos 100 episodios), mientras Actor-Critic sufrió
+sesgo e interferencia del tronco compartido. Sin embargo, REINFORCE presentó una mediana
+de gradiente 59 veces mayor y requiere trayectorias completas; esas propiedades son
+inadecuadas para asignar una señal local de suavidad y aprender con datos físicos caros.
+Actor-Critic permite crédito temporal y es la base del PPO usado por Luo et al.; por
+ello es la dirección escalable, siempre que se reemplace TD(0) simple por estimación de
+ventaja estable y se separen o balanceen cuidadosamente Actor y Critic.
+
+\medskip
+\lead{Escalamiento a PPO.} Sí recomendamos migrar a PPO \emph{antes} de considerar
+hardware, pero no pasar directamente de PPO a un paciente. El recorte responde a los
+picos asociados con caídas de recompensa y el paper aporta evidencia simulada pertinente.
+PPO no garantiza acciones suaves: deben mantenerse la penalización de diferencias y
+\textit{jerk}, el historial de acciones en el estado, límites duros de tasa, filtrado y
+saturación de torque. Después se requiere aleatorización de dominio, validación
+\textit{hardware-in-the-loop}, un supervisor de seguridad independiente y pruebas
+progresivas sin carga humana antes de cualquier protocolo clínico.
+\end{respuesta}
+
+% =============================================================
+\section{Repositorio}
+
+\begin{respuesta}
+Código fuente y notebook:
+\url{https://github.com/MarioBetancourt04/Aprendizaje-Por-Refuerzo---Laboratorio-6}
+\end{respuesta}
+
+% =============================================================
+\section{Uso de IA generativa}
+
+\begin{respuesta}
+\lead{Task 1.} Se utilizó Claude (Anthropic) en los cuatro incisos. No hubo un prompt
+único que produjera la respuesta; el diálogo se organizó en tres etapas: explicación del
+marco teórico, contraste del grupo con las diapositivas y redacción conjunta en
+\LaTeX{}. La herramienta apoyó la formalización del operador $\arg\max$, el gradiente
+de la Gaussiana, el compromiso sesgo--varianza y la ampliación del estado necesaria para
+una recompensa que depende de la acción anterior.
+
+\medskip
+\lead{Prompt inicial de Task 1.}
+\begin{quote}\itshape
+``Vamos con otro lab de aprendizaje por refuerzo, hagamos el formato.''
+\end{quote}
+Luego se pidió explicar primero cada concepto para que el grupo pudiera interpretarlo
+antes de construir la resolución. Funcionó porque separó comprensión y redacción: las
+predicciones falsables y el tratamiento de $\sigma$ aprendible se revisaron contra el
+enunciado en vez de aceptar directamente una respuesta generada.
+
+\medskip
+\lead{Task 2.} Se utilizó OpenAI GPT-5.6 Sol para auditar y terminar el notebook. Los
+prompts del grupo fueron:
+\begin{quote}\itshape
+``Como estas, me ayudas con este laboratorio por favor, ya hice la mayoria de task y en
+el notebook ya esta casi todo el codigo solo falta agregar al informe y terminar el
+codigo, para leer que hay que hacer lee el pdf y para agregarlo usa el .tex que ya
+existe.''
+
+``Se me olvido decirte que por favor para correr el notebook de manera local utilices el
+comando cv que utiliza un env que tengo ya predeterminado en la maquina.''
+\end{quote}
+Funcionaron porque fijaron las fuentes de verdad (PDF, notebook y \texttt{.tex}),
+exigieron trabajar sobre el avance existente y especificaron el entorno reproducible.
+La herramienta detectó el optimizador no importado, la ausencia del entrenamiento de
+Actor-Critic y que la norma del tronco compartido mezclaba las dos pérdidas. El grupo
+revisó esos cambios y la corrida se ejecutó completa con 1000 episodios por método.
+
+\medskip
+\lead{Task 3.} El primer prompt también pidió completar el informe. GPT-5.6 Sol se usó
+para calcular resúmenes de los arreglos experimentales, proponer el contraste con las
+predicciones y localizar literatura sobre PPO en exoesqueletos. Funcionó porque toda
+afirmación numérica se volvió a calcular desde \texttt{lab6\_metrics.npz}, y los datos
+bibliográficos y resultados del paper se verificaron contra el DOI y el texto completo
+en PubMed Central. El grupo conservó los resultados refutados y limitó las conclusiones
+del paper a simulación.
+
+\medskip
+\lead{Verificación realizada.} Se revisaron la derivación de
+$\nabla_\theta \ln \pi_\theta$ y la demostración de insesgadez de la línea base. El
+notebook se ejecutó de principio a fin en el entorno local, las figuras se regeneraron
+desde los historiales de 1000 episodios y el PDF final se compiló desde este archivo. La
+referencia bibliográfica, su DOI y las cifras citadas se contrastaron con la fuente
+primaria.
+\end{respuesta}
+
+\begin{thebibliography}{9}
+\bibitem{luo2023}
+S. Luo, G. Androwis, S. Adamovich, E. Nunez, H. Su y X. Zhou,
+\enquote{Robust walking control of a lower limb rehabilitation exoskeleton coupled with
+a musculoskeletal model via deep reinforcement learning},
+\emph{Journal of NeuroEngineering and Rehabilitation}, vol. 20, art. 34, 2023.
+\href{https://doi.org/10.1186/s12984-023-01147-2}{doi:10.1186/s12984-023-01147-2}.
+\end{thebibliography}
+
+\end{document}
