@@ -850,31 +850,37 @@ predicciones falsables y el tratamiento de $\sigma$ aprendible se revisaron cont
 enunciado en vez de aceptar directamente una respuesta generada.
 
 \medskip
-\lead{Task 2.} Se utilizó OpenAI GPT-5.6 Sol para auditar y terminar el notebook. Los
-prompts del grupo fueron:
+\lead{Task 2.} Se utilizó OpenAI GPT-5.6 Sol como apoyo para comprender, revisar y
+ejecutar la implementación. El prompt de trabajo se formuló así:
 \begin{quote}\itshape
-``Como estas, me ayudas con este laboratorio por favor, ya hice la mayoria de task y en
-el notebook ya esta casi todo el codigo solo falta agregar al informe y terminar el
-codigo, para leer que hay que hacer lee el pdf y para agregarlo usa el .tex que ya
-existe.''
-
-``Se me olvido decirte que por favor para correr el notebook de manera local utilices el
-comando cv que utiliza un env que tengo ya predeterminado en la maquina.''
+``Ayúdame a revisar y explicar paso a paso el código que deseo implementar para comparar
+REINFORCE con línea base y Actor-Critic. Parte del código que ya escribimos en el
+notebook y explícame cómo se relaciona cada actualización con las fórmulas del curso.
+Indícame qué cambios hacen falta, cómo instalar \texttt{gymnasium[box2d]} y cómo ejecutar
+el notebook localmente usando el entorno que se activa con \texttt{cv}. Después ayúdame
+a comprobar que ambos métodos entrenen durante 1000 episodios y que las métricas y
+gráficas solicitadas se generen correctamente.''
 \end{quote}
-Funcionaron porque fijaron las fuentes de verdad (PDF, notebook y \texttt{.tex}),
-exigieron trabajar sobre el avance existente y especificaron el entorno reproducible.
-La herramienta detectó el optimizador no importado, la ausencia del entrenamiento de
-Actor-Critic y que la norma del tronco compartido mezclaba las dos pérdidas. El grupo
-revisó esos cambios y la corrida se ejecutó completa con 1000 episodios por método.
+Funcionó porque pidió explicar la relación entre teoría y código antes de modificarlo,
+partió del avance existente y especificó tanto las dependencias como el entorno de
+ejecución. La herramienta señaló el optimizador no importado, la ausencia del
+entrenamiento de Actor-Critic y que la norma del tronco compartido mezclaba las dos
+pérdidas. El grupo revisó cada corrección y ejecutó la corrida completa.
 
 \medskip
-\lead{Task 3.} El primer prompt también pidió completar el informe. GPT-5.6 Sol se usó
-para calcular resúmenes de los arreglos experimentales, proponer el contraste con las
-predicciones y localizar literatura sobre PPO en exoesqueletos. Funcionó porque toda
-afirmación numérica se volvió a calcular desde \texttt{lab6\_metrics.npz}, y los datos
-bibliográficos y resultados del paper se verificaron contra el DOI y el texto completo
-en PubMed Central. El grupo conservó los resultados refutados y limitó las conclusiones
-del paper a simulación.
+\lead{Task 3.} Para interpretar los resultados se utilizó el siguiente prompt:
+\begin{quote}\itshape
+``Ayúdame a leer las gráficas y métricas obtenidas, explicando cómo contrastar cada
+predicción de Task 1 y cómo identificar picos de gradiente, caídas de recompensa y cambios
+de entropía. También oriéntame para buscar y comprender un paper reciente que aplique PPO
+a exoesqueletos, verificando autores, resultados y DOI, para que podamos redactar nuestras
+propias conclusiones y recomendaciones.''
+\end{quote}
+Funcionó porque solicitó interpretación y fuentes verificables, no una conclusión sin
+evidencia. Toda afirmación numérica se volvió a calcular desde
+\texttt{lab6\_metrics.npz}; los datos del paper se contrastaron con el DOI y el texto
+completo en PubMed Central. El grupo conservó los resultados refutados y limitó las
+conclusiones del paper a simulación.
 
 \medskip
 \lead{Verificación realizada.} Se revisaron la derivación de
